@@ -1,3 +1,4 @@
+# Arch Linux Documentation
 ## Preface
 > The purpose of this document is to install Arch Linux and understand how it works and what the commands do when building the system from the ground up. I hope that this experience can benefit me in future and those who stumble upon it.
 
@@ -35,6 +36,7 @@ use `fdisk -l` to see available drives and use the command `fdisk /dev/drive_you
 | d       | delete partition                                                                      |
 | t       | change the partition type, make sure you do this to all Partitions.                   |
 | p       | print the partition table (to verify)                                                 |
+
 I want to enable **Hibernation** on my system, that typically means RAM + 2gb. If you are following on virtual box just say like 4GB.
 
 | Mount point on the installed system | Partition                   | Partition type       | Suggested size                                            |
@@ -114,7 +116,6 @@ swapon /dev/swap_partition
 mount --mkdir /dev/efi_system_partition /mnt/boot
 mount --mkdir /dev/volgroup0/lv_home /mnt/home
 ```
-
 ## 2. Installation
 ---
 ```
