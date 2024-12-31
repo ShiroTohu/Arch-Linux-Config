@@ -4,7 +4,6 @@
 
 The Notes follows the format showcased in the [Arch Linux Installation Guide](https://wiki.archlinux.org/title/Installation_guide). This is not necessarily a guide, more like a reference for me and notes explaining things and how they work. There are some sections that I skip because the Arch Wiki explains it quite well.
 ## 1 Pre-Installation
----
 ### 1.2 Verify signature
 When installing Arch it is recommended to use a torrent client to download the .iso file. Do not do this. It is much better to download it using one of the mirrors provided and verifying the signature "on a system with GnuPG installed".
 
@@ -44,6 +43,7 @@ I want to enable **Hibernation** on my system, that typically means RAM + 2gb. I
 | `/boot`                             | `/dev/efi_system_partition` | EFI system partition | 1 GiB                                                     |
 | `[SWAP]`                            | `/dev/swap_partition`       | Linux swap           | RAM + 2GiB (for hibernation) / 2GiB (without hibernation) |
 | `/`                                 | `dev/root_partition`        | Linux LVM            | remainder of the device                                   |
+
 #### 1.9.2 To LVM or to not LVM?
 In the example layouts section of the manual it states that "If you want to create any stacked block devices for [LVM](https://wiki.archlinux.org/title/Install_Arch_Linux_on_LVM "Install Arch Linux on LVM"), [system encryption](https://wiki.archlinux.org/title/Dm-crypt "Dm-crypt") or [RAID](https://wiki.archlinux.org/title/RAID "RAID"), do it now.". What are they and why would we want that? The only reason I ask this instead of following the normal installation route of assigning `Linux x86-64 root` to the root partition was because this [video](https://www.youtube.com/watch?v=FxeriGuJKTM) where Arch was installed differently, therefore I thought it is probably worth looking into.
 
@@ -89,12 +89,15 @@ pvcreate /dev/mapper/lvm
 vgcreate volgroup0 /dev/mapper/lvm
 ```
 
-We can partition the volume group into `lv_root` and `lv_home` which are the names of our logical volumes. `-L` denotes the size of our logical volume and volgroup0 is the name of the volume group we are using to define our logical volumes.
+We can partition the voroup into `lv_root` and `lv_home` which are the names of our logical volumes. `-L` denotes the size of our logical volume and volgroup0 is the name of the volume group we are using to define our logical volumes.
 ```
 lvcreate -L 30GB volgroup0 -n lv_root
 lvcreate -L 250GB volgroup0 -n lv_home
 lvdisplay
 ```
+
+- **IF YOU WROTE THE WRONG SIZE YOU CAN USE** `lvextend -L +<size> /dev/<vg_name>/<lv_name>`
+- **YOU CAN MAKE THE LOGICAL VOLUME TAKE UP THE REST OF THE AVAILABLE SPACE USING** `+100%FREE` **AS THE ARGUMENT TO `-l`**
 
 loading kernel module for managing LVM devices. This Kernel module is assumed to not be activated right out of the box. We then scan the virtual group to make sure they exist and apply them to the internal database since it is new and then activate all volume groups. 
 ```
@@ -117,13 +120,100 @@ mount --mkdir /dev/efi_system_partition /mnt/boot
 mount --mkdir /dev/volgroup0/lv_home /mnt/home
 ```
 ## 2. Installation
----
+install required packages
+
 ```
-pacstrap -K /mnt base linux linux-firmware
+pacstrap -K /mnt base linux linux-firmware linux-headers linux-lts linux-lts-headers
 ```
+
+We install the base and linux kernel. linux-firmware allows for linux to interface with firmware.
+### 3. Configuring the System
+Critical for mounting partitions at boot time.
 
 ```
 genfstab -U /mnt >> /mnt/etc/fstab
 ```
-
 https://wiki.archlinux.org/title/Installation_guide#Configure_the_system
+
+Change the root to the new system (which is presumably installed/mounted onto your actual system at this point.)
+
+```
+arch-chroot /mnt
+```
+
+#### Set the Password
+assumes you want to change the password for the root user
+```
+passwd
+```
+#### Create a User
+```
+useradd -m -g users -G wheel shirotohu
+```
+
+```
+passwd jay
+```
+
+#### Installing other packages
+```
+pacman -S base-devel dosfstools grub efibootmgr lvm2 mtools networkmanager os-prober sudo
+```
+note you don't install a desktop environment. We want to install KDE and Wayland for our installation.
+
+#### Installing GPU Drivers
+```
+lspci
+```
+list your pci devices and find out your gpu. We have a NVIDIA GPU sadly.
+```
+pacman -S nvidia nvidia-utils nvidia-lts
+```
+
+#### Generating RAM disks for our Kernel(s)
+```
+vim /etc/mkinitcpio.conf
+```
+go to the hooks line and add encrypt and lvm2 between filesystems and block
+```
+HOOKS=(base udev autodetect modconf kms keyboard keymap consolefont block encrypt lvm2 filesystems fsck)
+```
+
+make sure you see encrypt and LVM 2 in the output of the command below. You need to run the command for every kernel you have.
+
+```
+mkinitcpio -p linux
+mkinitcpio -p linux-lts
+```
+
+#### Configuring the locale
+uncomment your locale and then generate that locale.
+```
+vim /etc/locale.gen
+locale-gen
+```
+
+#### Configuring GRUB
+```
+vim /etc/default/grub
+```
+change the GRUB_CMDLINE_LINUX_DEFAULT to
+```
+GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 cryptdevice=/dev/sda3:volgroup0 quiet"
+```
+
+#### Install GRUB
+```
+grub-install --traget=x86_64-efi --bootloader-id=grub_uefi --recheck
+cp /usr/share/locale/en\#quot/LC_MESSAGES/grub.mo /boot/grub/locale/en.mo
+grub-mkconfig -o /boot/grub/grub.cfg
+systemctl enable NetworkManager
+```
+
+### Final Touches
+```
+unmount -a
+reboot
+```
+
+none of this probably works and I will probably have to fix it.
