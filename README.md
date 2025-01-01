@@ -92,12 +92,14 @@ vgcreate volgroup0 /dev/mapper/lvm
 We can partition the voroup into `lv_root` and `lv_home` which are the names of our logical volumes. `-L` denotes the size of our logical volume and volgroup0 is the name of the volume group we are using to define our logical volumes.
 ```
 lvcreate -L 30GB volgroup0 -n lv_root
-lvcreate -L 250GB volgroup0 -n lv_home
+lvcreate -l +100%FREE volgroup0 -n lv_home
 lvdisplay
 ```
 
 - **IF YOU WROTE THE WRONG SIZE YOU CAN USE** `lvextend -L +<size> /dev/<vg_name>/<lv_name>`
 - **YOU CAN MAKE THE LOGICAL VOLUME TAKE UP THE REST OF THE AVAILABLE SPACE USING** `+100%FREE` **AS THE ARGUMENT TO `-l`**
+	- no you are not mistaken `-l` is different to `-L`
+	- You can leave extra room if you like
 
 loading kernel module for managing LVM devices. This Kernel module is assumed to not be activated right out of the box. We then scan the virtual group to make sure they exist and apply them to the internal database since it is new and then activate all volume groups. 
 ```
@@ -110,6 +112,8 @@ formatting logical home and root volumes to use ext4. The ext4 file system incre
 ```
 mkfs.ext4 /dev/volgroup0/lv_root
 mkfs.ext4 /dev/volgroup0/lv_home
+mkswap /dev/_swap_partition
+mkfs.fat -F 32 /dev/_efi_system_partition_
 ```
 
 Mount partitions and logical volumes to the machine.
@@ -120,57 +124,68 @@ mount --mkdir /dev/efi_system_partition /mnt/boot
 mount --mkdir /dev/volgroup0/lv_home /mnt/home
 ```
 ## 2. Installation
-install required packages
+Install required packages.
+- `base` installs essential utilities for the system
+- `linux` installs the latest stable Linux Kernel
+- `linux-lts` install the long-term support kernel (which is nice to have in case the latest kernel breaks)
+- `linux-firmware` Firmware for various devices
+- `linux-headers` and `linux-lts-headers` header files define interfaces to functions and gives structures for programs to use. 
+Initialize an empty pacman keyring in the target using the `-K` flag.
 
 ```
 pacstrap -K /mnt base linux linux-firmware linux-headers linux-lts linux-lts-headers
 ```
-
-We install the base and linux kernel. linux-firmware allows for linux to interface with firmware.
 ### 3. Configuring the System
 Critical for mounting partitions at boot time.
+https://www.redhat.com/en/blog/etc-fstab
+`fstab` or Linux filesystem table is a old school piece of technology that we simply cannot live without. Basically `fstab` allows users to define a specific set of rules whenever a file system is introduced to the system. Take a USB for example, when you plug it into your computer you don't really think about the mechanisms behind how it got mounted. without `fstab` you would have to mount it manually with the `mount` command.
 
 ```
 genfstab -U /mnt >> /mnt/etc/fstab
 ```
 https://wiki.archlinux.org/title/Installation_guide#Configure_the_system
-
 Change the root to the new system (which is presumably installed/mounted onto your actual system at this point.)
 
 ```
 arch-chroot /mnt
 ```
 
-#### Set the Password
-assumes you want to change the password for the root user
+#### Setting the Password
+Writing `passwd` by itself assumes you want to change the password for the root user
 ```
 passwd
 ```
 #### Create a User
+You can create a user using the `useradd` command.
+ - `-m` creates a home directory for the user
+ - `-g users` sets the primary group to `users`
+ - `-G wheel` adds it to the administrative group
+ - then the name of the user
 ```
 useradd -m -g users -G wheel shirotohu
 ```
-
+After that you can configure the password for this user.
 ```
-passwd jay
+passwd shirotohu
 ```
-
 #### Installing other packages
 ```
 pacman -S base-devel dosfstools grub efibootmgr lvm2 mtools networkmanager os-prober sudo
 ```
-note you don't install a desktop environment. We want to install KDE and Wayland for our installation.
-
+We install a bunch of stuff here, things to note here are lvm2, grub, networkmanager, and sudo.
+> [!NOTE]
+> note that we don't install a desktop environment here. We want to install KDE and Wayland for our installation and that part is left later.
 #### Installing GPU Drivers
+list your PCI devices and to find out the brand of GPU. We have a NVIDIA GPU sadly.
 ```
 lspci
 ```
-list your pci devices and find out your gpu. We have a NVIDIA GPU sadly.
+Install the drivers as such.
 ```
 pacman -S nvidia nvidia-utils nvidia-lts
 ```
-
 #### Generating RAM disks for our Kernel(s)
+[mkinitcpio](https://gitlab.archlinux.org/archlinux/mkinitcpio/mkinitcpio) is a Bash script used to create an [initial ramdisk](https://en.wikipedia.org/wiki/Initial_ramdisk "wikipedia:Initial ramdisk") environment.
 ```
 vim /etc/mkinitcpio.conf
 ```
@@ -178,21 +193,17 @@ go to the hooks line and add encrypt and lvm2 between filesystems and block
 ```
 HOOKS=(base udev autodetect modconf kms keyboard keymap consolefont block encrypt lvm2 filesystems fsck)
 ```
-
 make sure you see encrypt and LVM 2 in the output of the command below. You need to run the command for every kernel you have.
-
 ```
 mkinitcpio -p linux
 mkinitcpio -p linux-lts
 ```
-
 #### Configuring the locale
 uncomment your locale and then generate that locale.
 ```
 vim /etc/locale.gen
 locale-gen
 ```
-
 #### Configuring GRUB
 ```
 vim /etc/default/grub
@@ -201,19 +212,16 @@ change the GRUB_CMDLINE_LINUX_DEFAULT to
 ```
 GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 cryptdevice=/dev/sda3:volgroup0 quiet"
 ```
-
 #### Install GRUB
 ```
-grub-install --traget=x86_64-efi --bootloader-id=grub_uefi --recheck
+grub-install --target=x86_64-efi --bootloader-id=grub_uefi --recheck
 cp /usr/share/locale/en\#quot/LC_MESSAGES/grub.mo /boot/grub/locale/en.mo
 grub-mkconfig -o /boot/grub/grub.cfg
 systemctl enable NetworkManager
 ```
-
 ### Final Touches
 ```
 unmount -a
 reboot
 ```
-
 none of this probably works and I will probably have to fix it.
