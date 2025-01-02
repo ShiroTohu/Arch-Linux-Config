@@ -21,9 +21,33 @@ This is literally the bare minimum, I would recommend going to the wiki and havi
 - To turn off the taskbar at the bottom of VirtualBox. User Interface > Mini Toolbar > Show in Full-screen/Seamless.
 
 > [!CAUTION] 
-> Follow Wiki until section 1.9 Partition the disks
-
+> Follow Wiki until section 1.8 Partition the disks (If you are following with the wiki)
+### 1.6 Verify Boot Mode
+I like verifying the boot mode because it makes me feel cool, so I'll put the command here
+```
+cat /sys/firmware/efi/fw_platform_size
+```
+### 1.8 Update the system clock
+You can check if the system clock is synced using the command below
+```
+timedatectl
+```
+You can change the timezone using the command below
+```
+timedatectl list-timezones
+timedatectl set-timezone <timezone>
+```
 ### 1.9 Partition the disks
+#### 1.9.1 Encrypting Drives with Random data.
+Good practice to override your disk with random data to hide your data boundary. You can write random data by using the `dd` command.
+
+```
+dd if=/dev/urandom of/dev/sda bs=4096 status=progress
+```
+
+This can take a REALLY LONG TIME. So much so that I don't even want to think about what happens if you screw the rest of the installation up. I only recommend this step if you know what you are doing.
+
+https://youtu.be/YC7NMbl4goo
 #### 1.9.1 Using fdisk
 use `fdisk -l` to see available drives and use the command `fdisk /dev/drive_you_want_to_partition` to select it. You will then enter fdisk where you can edit and create partitions. Here are some useful commands.
 
@@ -37,6 +61,19 @@ use `fdisk -l` to see available drives and use the command `fdisk /dev/drive_you
 | p       | print the partition table (to verify)                                                 |
 
 I want to enable **Hibernation** on my system, that typically means RAM + 2gb. If you are following on virtual box just say like 4GB.
+##### Single Storage Device Partition Table
+| Mount point on the installed system | Partition                   | Partition type       | Suggested size                                            |
+| ----------------------------------- | --------------------------- | -------------------- | --------------------------------------------------------- |
+| `/boot`                             | `/dev/efi_system_partition` | EFI system partition | 1 GiB                                                     |
+| `[SWAP]`                            | `/dev/swap_partition`       | Linux swap           | RAM + 2GiB (for hibernation) / 2GiB (without hibernation) |
+| `/`                                 | `dev/root_partition`        | Linux LVM            | remainder of the device                                   |
+
+##### Multiple Storage Device Partition Table
+| Mount point on the installed system | Partition                   | Partition type       | Suggested size                                            |
+| ----------------------------------- | --------------------------- | -------------------- | --------------------------------------------------------- |
+| `/boot`                             | `/dev/efi_system_partition` | EFI system partition | 1 GiB                                                     |
+| `[SWAP]`                            | `/dev/swap_partition`       | Linux swap           | RAM + 2GiB (for hibernation) / 2GiB (without hibernation) |
+| `/`                                 | `dev/root_partition`        | Linux LVM            | remainder of the device                                   |
 
 | Mount point on the installed system | Partition                   | Partition type       | Suggested size                                            |
 | ----------------------------------- | --------------------------- | -------------------- | --------------------------------------------------------- |
@@ -144,7 +181,7 @@ https://www.redhat.com/en/blog/etc-fstab
 genfstab -U /mnt >> /mnt/etc/fstab
 ```
 https://wiki.archlinux.org/title/Installation_guide#Configure_the_system
-Change the root to the new system (which is presumably installed/mounted onto your actual system at this point.)
+Change the root to the new system (which is presumably installed/mounted onto your actual system at this point.). This creates a restricted environment where the process can only see and access files within the specified directory.
 
 ```
 arch-chroot /mnt
@@ -208,20 +245,26 @@ locale-gen
 ```
 vim /etc/default/grub
 ```
+Get the UUID of the encrypted drive using 
+```
+blkid <encrypted_device>
+```
 change the GRUB_CMDLINE_LINUX_DEFAULT to
 ```
-GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 cryptdevice=/dev/sda3:volgroup0 quiet"
+GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 cryptdevice=UUID=<device_uuid>:volgroup0 quiet"
 ```
+
 #### Install GRUB
 ```
-grub-install --target=x86_64-efi --bootloader-id=grub_uefi --recheck
-cp /usr/share/locale/en\#quot/LC_MESSAGES/grub.mo /boot/grub/locale/en.mo
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=grub_uefi --recheck 
+cp /usr/share/locale/en\@quot/LC_MESSAGES/grub.mo /boot/grub/locale/en.mo
 grub-mkconfig -o /boot/grub/grub.cfg
 systemctl enable NetworkManager
 ```
 ### Final Touches
+exit the chroot environment and then
 ```
-unmount -a
+umount -a
 reboot
 ```
 none of this probably works and I will probably have to fix it.
